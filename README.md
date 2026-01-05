@@ -33,11 +33,17 @@ python -m torch.distributed.launch --nproc_per_node 2 --master_port 9527 train.p
     |- images
     |- labels
 ```
-所以SLBD.yaml需要改一下路径。懒得划分数据集了。
+所以SLBD.yaml需要改一下路径。
 ```shell
-train: data/riseHand_Dataset/images
-val: data/riseHand_Dataset/images
-test: data/riseHand_Dataset/images
+train: 'data/riseHand_Dataset/images/train'
+val: 'data/riseHand_Dataset/images/val'
+test: 'data/riseHand_Dataset/images/val'
+
+# number of classes
+nc: 1
+
+# class names
+names: ['raise_hand']
 ```
 
 ##  lba.yaml
