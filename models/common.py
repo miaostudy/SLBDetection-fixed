@@ -2367,39 +2367,30 @@ class LBASwinTransformerblock_original(nn.Module):
         self.register_buffer("attn_mask", attn_mask)
 
     def forward(self, x):
-        # H, W = self.input_resolution
-        # B, L, C = x.shape
-        # assert L == H * W, "input feature has wrong size"
-
-        #  # Check input shape and convert if needed
-        # if len(x.shape) == 4:  # If input is (B, C, H, W)
-        #     B, C, H, W = x.shape
-        #     # Convert to (B, L, C) where L = H * W
-        #     x = x.permute(0, 2, 3, 1).contiguous().view(B, H * W, C)
-
-        # H, W = self.input_resolution
-        # B, L, C = x.shape
-        # assert L == H * W, "input feature has wrong size"
-        # Check input shape and convert if needed
+        # Handle input shape
+        is_4d_input = False
         if len(x.shape) == 4:  # If input is (B, C, H, W)
             B, C, H, W = x.shape
-            # Convert to (B, L, C) where L = H * W
-            x = x.permute(0, 2, 3, 1).contiguous().view(B, H * W, C)
             is_4d_input = True
         else:
             B, L, C = x.shape
-            # Calculate H, W from L and input_resolution
             H, W = self.input_resolution
-            is_4d_input = False
+            x = x.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()  # Treat as 4D for unified padding logic
+            is_4d_input = False  # Track origin to restore later if needed, though YOLO usually keeps 4D
 
-        # Use actual H, W from input if it was 4D, otherwise use configured resolution
-        if is_4d_input:
-            actual_H, actual_W = H, W
-        else:
-            actual_H, actual_W = self.input_resolution
+        # Add Padding Logic
+        pad_r = (self.window_size - W % self.window_size) % self.window_size
+        pad_b = (self.window_size - H % self.window_size) % self.window_size
+        if pad_r > 0 or pad_b > 0:
+            # Pad (B, C, H, W) -> (Pad Left, Pad Right, Pad Top, Pad Bottom)
+            x = F.pad(x, (0, pad_r, 0, pad_b))
+            _, _, H, W = x.shape  # Update H, W to padded size
+
+        # Convert to (B, L, C) for Swin processing
+        x = x.permute(0, 2, 3, 1).contiguous().view(B, H * W, C)
 
         B, L, C = x.shape
-        assert L == actual_H * actual_W, "input feature has wrong size"
+        # assert L == H * W, "input feature has wrong size" # Assertion no longer needed or always true by design
 
         shortcut = x
         x = self.norm1(x)
@@ -2433,8 +2424,12 @@ class LBASwinTransformerblock_original(nn.Module):
         x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
-        # Convert back to (B, C, H, W) if original input was 4D
+        # Convert back to (B, C, H, W)
         x = x.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()
+
+        # Remove Padding
+        if pad_r > 0 or pad_b > 0:
+            x = x[:, :, :H - pad_b, :W - pad_r]
 
         return x
 
