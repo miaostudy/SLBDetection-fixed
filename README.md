@@ -49,5 +49,6 @@ test: data/riseHand_Dataset/images
 
 
 ## models/yolo.py
-没有引用的`SwinTransformerBlock`, 直接删掉
-LBASwinTransformerblock也需要加进去
+1. 没有引用的`SwinTransformerBlock`, 直接删掉
+2. LBASwinTransformerblock也需要加进去
+3. MP模块不应该在`if`里处理
