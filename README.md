@@ -2,7 +2,7 @@
 ```shell
 conda create -n slb python=3.11
 conda activate slb
-
+pip install -r requirements.txt
 ```
 
 # 训练
