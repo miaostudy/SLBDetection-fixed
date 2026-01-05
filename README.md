@@ -5,9 +5,37 @@ conda activate slb
 
 ```
 
+# 训练
+```shell
+python -m torch.distributed.launch --nproc_per_node 2 --master_port 9527 train.py \
+    --workers 8 \
+    --device 0,1 \
+    --sync-bn \
+    --batch-size 128 \
+    --data data/SLBD.yaml \
+    --img 640 \
+    --cfg cfg/SLBD/lba.yaml \
+    --name yolov7
+```
 
 
 # 修改记录
 ## train.py
 ### 多gpu错误
 应该是`--local-rank`，参数写成了`--local_rank`
+
+## SLBD.yaml
+改了路径。 目前的数据集结构:
+```shell
+|data
+  |- riseHand_Dataset
+    |- images
+    |- labels
+```
+所以SLBD.yaml需要改一下路径。懒得划分数据集了。
+```shell
+train: data/riseHand_Dataset/images
+val: data/riseHand_Dataset/images
+test: data/riseHand_Dataset/images
+```
+
