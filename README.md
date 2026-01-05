@@ -43,6 +43,8 @@ test: data/riseHand_Dataset/images
 ##  lba.yaml
 有一些语法错误。少了逗号、括号啥的。
 
+最后几层的索引错误
+
 
 ## models/common.py
 重复定义了`LBASwinTransformerblock`，删掉第二个，第二个接收的参数不是配置的格式。
