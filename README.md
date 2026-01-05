@@ -45,4 +45,8 @@ test: data/riseHand_Dataset/images
 
 
 ## models/common.py
-没有`yolo.py`引用的`SwinTransformerBlock`
+重复定义了`LBASwinTransformerblock`，删掉第二个，第二个接收的参数不是配置的格式。
+
+
+## models/yolo.py
+没有引用的`SwinTransformerBlock`, 直接删掉
