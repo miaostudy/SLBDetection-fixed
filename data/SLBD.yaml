@@ -4,9 +4,9 @@
 #download: bash ./scripts/get_coco.sh
 
 # train and val data as 1) directory: path/images/, 2) file: path/images.txt, or 3) list: [path1/images/, path2/images/]
-train: 'riseHand_Dataset/images/train'
-val: 'images/val'
-test: 'images/val'
+train: 'data/riseHand_Dataset/images/train'
+val: 'data/riseHand_Dataset/images/val'
+test: 'data/riseHand_Dataset/images/val'
 
 # number of classes
 nc: 1
