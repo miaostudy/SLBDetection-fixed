@@ -2367,6 +2367,7 @@ class LBASwinTransformerblock_original(nn.Module):
         self.register_buffer("attn_mask", attn_mask)
 
     def forward(self, x):
+        print(x.shape)
         # Handle input shape
         is_4d_input = False
         if len(x.shape) == 4:  # If input is (B, C, H, W)

@@ -55,7 +55,8 @@ test: data/riseHand_Dataset/images
 为啥连配置文件都写不对???
 
 ## models/common.py
-重复定义了`LBASwinTransformerblock`，删掉第二个，第二个接收的参数不是配置的格式。
+重复定义了`LBASwinTransformerblock`，只保留一个就行。
+`LBASwinTransformerblock`的forward有大问题。
 
 
 ## models/yolo.py
