@@ -15,6 +15,7 @@ python -m torch.distributed.launch --nproc_per_node 2 --master_port 9527 train.p
     --data data/SLBD.yaml \
     --img 640 \
     --cfg cfg/SLBD/lba.yaml \
+    --weights '' \
     --name yolov7
 ```
 
@@ -39,3 +40,4 @@ val: data/riseHand_Dataset/images
 test: data/riseHand_Dataset/images
 ```
 
+##  lba.yaml
