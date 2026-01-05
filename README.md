@@ -41,3 +41,4 @@ test: data/riseHand_Dataset/images
 ```
 
 ##  lba.yaml
+有一些语法错误。少了逗号、括号啥的。
