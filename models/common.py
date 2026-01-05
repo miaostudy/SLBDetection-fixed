@@ -2287,33 +2287,29 @@ class LearningBehaviorawareAttention(nn.Module):
 
 ##### end LearningBehaviorawareAttention
 
-class LBASwinTransformerblock_original(nn.Module):
-    def __init__(self, dim, input_resolution, num_heads, window_size=7, shift_size=0,
+import torch
+import torch.nn as nn
+from timm.models.layers import DropPath, to_2tuple
+
+
+# --------------------------------------------------------------------------------
+# 1. 这是一个基础层 (基于你提供的代码修改，作为内部组件)
+# --------------------------------------------------------------------------------
+class LBASwinTransformerLayer(nn.Module):
+    def __init__(self, dim, num_heads, window_size=7, shift_size=0,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
                  act_layer=nn.GELU, norm_layer=nn.LayerNorm,
-                 focusing_factor=3, kernel_size=5, attn_type='S'):
+                 focusing_factor=3, kernel_size=5, attn_type='L'):
         super().__init__()
         self.dim = dim
-        self.input_resolution = input_resolution
         self.num_heads = num_heads
         self.window_size = window_size
         self.shift_size = shift_size
         self.mlp_ratio = mlp_ratio
 
-        # 这里需要padding
-        if min(self.input_resolution) <= self.window_size:
-            self.shift_size = 0
-            self.window_size = min(self.input_resolution)
-        assert 0 <= self.shift_size < self.window_size, "shift_size must in 0-window_size"
-
         self.norm1 = norm_layer(dim)
 
-        #  如果使用 Shifted Window，必须用支持 Mask 的 Attention
-        if self.shift_size > 0 and attn_type == 'L':
-            print(f"Warning: LBA (Linear Attention) does not support Masking required for Shifted Windows.")
-            print(f"Switching to Standard WindowAttention for correctness.")
-            attn_type = 'S'
-
+        # 你的 LBA 逻辑保留
         if attn_type == 'L':
             self.attn = LearningBehaviorawareAttention(
                 dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
@@ -2329,30 +2325,9 @@ class LBASwinTransformerblock_original(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
-
-    def forward(self, x):
-        is_4d_input = False
-        if len(x.shape) == 4:
-            B, C, H, W = x.shape
-            is_4d_input = True
-        else:
-            B, L, C = x.shape
-            H, W = self.input_resolution
-            x = x.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()
-
-        # Padding
-        _, _, H_, W_ = x.shape
-        pad_r = (self.window_size - W_ % self.window_size) % self.window_size
-        pad_b = (self.window_size - H_ % self.window_size) % self.window_size
-        if pad_r > 0 or pad_b > 0:
-            x = F.pad(x, (0, pad_r, 0, pad_b))
-
-        # 更新 Padding 后的 H, W
-        B, C, H, W = x.shape
-
-        # 动态生成 Mask
+    def calculate_mask(self, H, W, device):
         if self.shift_size > 0:
-            img_mask = torch.zeros((1, H, W, 1), device=x.device)
+            img_mask = torch.zeros((1, H, W, 1), device=device)
             h_slices = (slice(0, -self.window_size),
                         slice(-self.window_size, -self.shift_size),
                         slice(-self.shift_size, None))
@@ -2369,33 +2344,38 @@ class LBASwinTransformerblock_original(nn.Module):
             mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
             attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
             attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
-        else:
-            attn_mask = None
+            return attn_mask
+        return None
 
-        # 3. Swin Transformer 主逻辑
-        x = x.permute(0, 2, 3, 1).contiguous().view(B, H * W, C)
+    def forward(self, x, H, W):
+        # x shape: [B, L, C]
+        B, L, C = x.shape
+        assert L == H * W, f"Input feature size ({L}) does not match expected size ({H}*{W}={H * W})."
+
         shortcut = x
         x = self.norm1(x)
         x = x.view(B, H, W, C)
 
-        # cyclic shift
+        # Cyclic shift
         if self.shift_size > 0:
             shifted_x = torch.roll(x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
+            attn_mask = self.calculate_mask(H, W, x.device)  # 动态生成 Mask
         else:
             shifted_x = x
+            attn_mask = None
 
-        # partition windows
+        # Partition windows
         x_windows = window_partition(shifted_x, self.window_size)
         x_windows = x_windows.view(-1, self.window_size * self.window_size, C)
 
         # W-MSA/SW-MSA
         attn_windows = self.attn(x_windows, mask=attn_mask)
 
-        # merge windows
+        # Merge windows
         attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
         shifted_x = window_reverse(attn_windows, self.window_size, H, W)
 
-        # reverse cyclic shift
+        # Reverse cyclic shift
         if self.shift_size > 0:
             x = torch.roll(shifted_x, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
         else:
@@ -2406,9 +2386,75 @@ class LBASwinTransformerblock_original(nn.Module):
         x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
-        x = x.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()
+        return x
+
+
+class LBASwinTransformerblock_original(nn.Module):
+    def __init__(self, dim, num_heads, depth=2, window_size=7,
+                 mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
+                 act_layer=nn.GELU, norm_layer=nn.LayerNorm,
+                 focusing_factor=3, kernel_size=5, attn_type='L'):
+        super().__init__()
+        self.dim = dim
+        self.num_heads = num_heads
+        self.window_size = window_size
+
+        self.blocks = nn.ModuleList([
+            LBASwinTransformerLayer(
+                dim=dim,
+                num_heads=num_heads,
+                window_size=window_size,
+                shift_size=0 if (i % 2 == 0) else window_size // 2,  # 自动交替 shift_size
+                mlp_ratio=mlp_ratio,
+                qkv_bias=qkv_bias,
+                qk_scale=qk_scale,
+                drop=drop,
+                attn_drop=attn_drop,
+                drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
+                act_layer=act_layer,
+                norm_layer=norm_layer,
+                focusing_factor=focusing_factor,
+                kernel_size=kernel_size,
+                attn_type=attn_type
+            )
+            for i in range(depth)
+        ])
+
+    def forward(self, x):
+        is_4d_input = False
+        if len(x.shape) == 4:
+            B, C, H, W = x.shape
+            x = x.permute(0, 2, 3, 1).contiguous().view(B, H * W, C)
+            is_4d_input = True
+        else:
+            B, L, C = x.shape
+            H = W = int(L ** 0.5)
+
+        pad_r = (self.window_size - W % self.window_size) % self.window_size
+        pad_b = (self.window_size - H % self.window_size) % self.window_size
         if pad_r > 0 or pad_b > 0:
-            x = x[:, :, :H_, :W_]
+            x = x.view(B, H, W, C)
+            x = nn.functional.pad(x, (0, 0, 0, pad_r, 0, pad_b))
+            H_pad, W_pad = x.shape[1], x.shape[2]
+            x = x.view(B, H_pad * W_pad, C)
+        else:
+            H_pad, W_pad = H, W
+
+        for blk in self.blocks:
+            x = blk(x, H_pad, W_pad)
+
+        if pad_r > 0 or pad_b > 0:
+            x = x.view(B, H_pad, W_pad, C)
+            x = x[:, :H, :W, :].contiguous()
+            if not is_4d_input:
+                x = x.view(B, H * W, C)
+        else:
+            x = x.view(B, H, W, C)
+
+        if is_4d_input:
+            x = x.permute(0, 3, 1, 2).contiguous()  # (B, C, H, W)
+        else:
+            x = x.view(B, H * W, C)
 
         return x
 

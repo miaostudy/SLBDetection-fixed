@@ -33,8 +33,8 @@ backbone:
    [-3, 1, Conv, [128, 1, 1]],
    [-1, 1, Conv, [128, 3, 2]],
    [[-1, -3], 1, Concat, [1]],  # 16-P3/8
-   # 修改点 1: 替换为 LBASwinTransformerblock，参数改为 [通道256, 头数4, 层数2, 窗口8]
-   [-1, 1, LBASwinTransformerblock, [256, 4, 2, 8]], #17
+
+   [-1, 1, LBASwinTransformerblock_original, [256, 4, 2, 8]], #17
 
    [-1, 1, Conv, [128, 1, 1]],
    [-2, 1, Conv, [128, 1, 1]],
@@ -50,9 +50,7 @@ backbone:
    [-3, 1, Conv, [256, 1, 1]],
    [-1, 1, Conv, [256, 3, 2]],
    [[-1, -3], 1, Concat, [1]],  # 29-P4/16
-   # 修改点 2: 替换为 LBASwinTransformerblock，参数改为 [通道512, 头数8, 层数2, 窗口8]
-   # 注意：原窗口4太小，建议改为8以获得合理的感受野，层数设为2以启用Shift
-   [-1, 1, LBASwinTransformerblock, [512, 8, 2, 8]], #31
+   [-1, 1, LBASwinTransformerblock_original, [512, 8, 2, 8]], #31
 
    [-1, 1, Conv, [256, 1, 1]],
    [-2, 1, Conv, [256, 1, 1]],
@@ -68,9 +66,7 @@ backbone:
    [-3, 1, Conv, [512, 1, 1]],
    [-1, 1, Conv, [512, 3, 2]],
    [[-1, -3], 1, Concat, [1]],  # 42-P5/32
-   # 修改点 3: 替换为 LBASwinTransformerblock，参数改为 [通道1024, 头数16, 层数2, 窗口4]
-   # 注意：原窗口2极小几乎无用，建议至少改为4，层数设为2
-   [-1, 1, LBASwinTransformerblock, [1024, 16, 2, 4]], #45
+   [-1, 1, LBASwinTransformerblock_original, [1024, 16, 2, 4]], #45
 
    [-1, 1, Conv, [256, 1, 1]],
    [-2, 1, Conv, [256, 1, 1]],
@@ -172,7 +168,7 @@ head:
    [-1, 1, Conv, [576, 1, 1]], # 130
 
    [-1, 1, DownC, [768]],
-   [[-1, 54], 1, Concat, [1]], # 修改: 67 -> 54
+   [[-1, 54], 1, Concat, [1]],
 
    [-1, 1, Conv, [512, 1, 1]],
    [-2, 1, Conv, [512, 1, 1]],

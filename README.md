@@ -15,7 +15,7 @@ python -m torch.distributed.launch --nproc_per_node 2 --master_port 9527 train.p
     --data data/SLBD.yaml \
     --img 640 \
     --cfg cfg/SLBD/lba.yaml \
-    --weights 'yolov7.pt' \
+    --weights '' \
     --name yolov7
 ```
 
@@ -85,10 +85,10 @@ LBASwinTransformerblock中有两个部分：
 
 
 # 模型方面的问题
-1. LBASwinTransformerblock只是单层的Block。
+1. LBASwinTransformerblock只是一个单层的Layer，而不是一个Block。
 2. 传入LBASwinTransformer的是[256, [32,32], 4, 8]，即(dim, input_resolution, num_heads, window_size)，那么**shift_size**就是默认的0
 
-核心：所有Transformer的shift_size均为0，这些层只能在固定的 8x8 窗口内提取特征，窗口之间没有任何信息交流。
+核心：所有Transformer的shift_size均为0，这些层只能在固定的 8x8 窗口内提取特征，窗口之间没有任何交流，这个相当于退化成线性层了
 
-3. input_resolution是[32,32], [16,16], [8,8]，分辨率太低了，加上窗口又是8、4、2，几乎没有感受野。
 
+    
