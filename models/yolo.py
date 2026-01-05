@@ -760,10 +760,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         #          Ghost, GhostCSPA, GhostCSPB, GhostCSPC,
         #          SwinTransformerBlock, STCSPA, STCSPB, STCSPC,
         #          SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC]:
-        if m is MP:
-            print('MP')
-            c2 = ch[f]
-        elif m in [nn.Conv2d, Conv, RobustConv, RobustConv2, DWConv, GhostConv, RepConv, RepConv_OREPA, DownC,
+        if m in [nn.Conv2d, Conv, RobustConv, RobustConv2, DWConv, GhostConv, RepConv, RepConv_OREPA, DownC,
                  SPP, SPPF, SPPCSPC, GhostSPPCSPC, MixConv2d, Focus, Stem, GhostStem, CrossConv,
                  Bottleneck, BottleneckCSPA, BottleneckCSPB, BottleneckCSPC,
                  RepBottleneck, RepBottleneckCSPA, RepBottleneckCSPB, RepBottleneckCSPC,
@@ -773,7 +770,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                  RepResX, RepResXCSPA, RepResXCSPB, RepResXCSPC,
                  LBASwinTransformerblock,
                  Ghost, GhostCSPA, GhostCSPB, GhostCSPC,
-                 SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC]:
+                 SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC] and m is not MP:
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)
