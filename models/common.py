@@ -2288,28 +2288,10 @@ class LearningBehaviorawareAttention(nn.Module):
 ##### end LearningBehaviorawareAttention
 
 class LBASwinTransformerblock_original(nn.Module):
-    r""" Swin Transformer Block.
-
-    Args:
-        dim (int): Number of input channels.
-        input_resolution (tuple[int]): Input resulotion.
-        num_heads (int): Number of attention heads.
-        window_size (int): Window size.
-        shift_size (int): Shift size for SW-MSA.
-        mlp_ratio (float): Ratio of mlp hidden dim to embedding dim.
-        qkv_bias (bool, optional): If True, add a learnable bias to query, key, value. Default: True
-        qk_scale (float | None, optional): Override default qk scale of head_dim ** -0.5 if set.
-        drop (float, optional): Dropout rate. Default: 0.0
-        attn_drop (float, optional): Attention dropout rate. Default: 0.0
-        drop_path (float, optional): Stochastic depth rate. Default: 0.0
-        act_layer (nn.Module, optional): Activation layer. Default: nn.GELU
-        norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
-    """
-
     def __init__(self, dim, input_resolution, num_heads, window_size=7, shift_size=0,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
                  act_layer=nn.GELU, norm_layer=nn.LayerNorm,
-                 focusing_factor=3, kernel_size=5, attn_type='L'):
+                 focusing_factor=3, kernel_size=5, attn_type='S'):
         super().__init__()
         self.dim = dim
         self.input_resolution = input_resolution
@@ -2317,16 +2299,22 @@ class LBASwinTransformerblock_original(nn.Module):
         self.window_size = window_size
         self.shift_size = shift_size
         self.mlp_ratio = mlp_ratio
+
+        # 这里需要padding
         if min(self.input_resolution) <= self.window_size:
-            # if window size is larger than input resolution, we don't partition windows
             self.shift_size = 0
             self.window_size = min(self.input_resolution)
         assert 0 <= self.shift_size < self.window_size, "shift_size must in 0-window_size"
 
         self.norm1 = norm_layer(dim)
-        assert attn_type in ['L', 'S']
+
+        #  如果使用 Shifted Window，必须用支持 Mask 的 Attention
+        if self.shift_size > 0 and attn_type == 'L':
+            print(f"Warning: LBA (Linear Attention) does not support Masking required for Shifted Windows.")
+            print(f"Switching to Standard WindowAttention for correctness.")
+            attn_type = 'S'
+
         if attn_type == 'L':
-            # self.attn = FocusedLinearAttention(
             self.attn = LearningBehaviorawareAttention(
                 dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
                 qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop,
@@ -2341,10 +2329,30 @@ class LBASwinTransformerblock_original(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
-        if self.shift_size > 0:
-            # calculate attention mask for SW-MSA
+
+    def forward(self, x):
+        is_4d_input = False
+        if len(x.shape) == 4:
+            B, C, H, W = x.shape
+            is_4d_input = True
+        else:
+            B, L, C = x.shape
             H, W = self.input_resolution
-            img_mask = torch.zeros((1, H, W, 1))  # 1 H W 1
+            x = x.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()
+
+        # Padding
+        _, _, H_, W_ = x.shape
+        pad_r = (self.window_size - W_ % self.window_size) % self.window_size
+        pad_b = (self.window_size - H_ % self.window_size) % self.window_size
+        if pad_r > 0 or pad_b > 0:
+            x = F.pad(x, (0, pad_r, 0, pad_b))
+
+        # 更新 Padding 后的 H, W
+        B, C, H, W = x.shape
+
+        # 动态生成 Mask
+        if self.shift_size > 0:
+            img_mask = torch.zeros((1, H, W, 1), device=x.device)
             h_slices = (slice(0, -self.window_size),
                         slice(-self.window_size, -self.shift_size),
                         slice(-self.shift_size, None))
@@ -2357,42 +2365,15 @@ class LBASwinTransformerblock_original(nn.Module):
                     img_mask[:, h, w, :] = cnt
                     cnt += 1
 
-            mask_windows = window_partition(img_mask, self.window_size)  # nW, window_size, window_size, 1
+            mask_windows = window_partition(img_mask, self.window_size)
             mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
             attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
             attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
         else:
             attn_mask = None
 
-        self.register_buffer("attn_mask", attn_mask)
-
-    def forward(self, x):
-        print(x.shape)
-        # Handle input shape
-        is_4d_input = False
-        if len(x.shape) == 4:  # If input is (B, C, H, W)
-            B, C, H, W = x.shape
-            is_4d_input = True
-        else:
-            B, L, C = x.shape
-            H, W = self.input_resolution
-            x = x.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()  # Treat as 4D for unified padding logic
-            is_4d_input = False  # Track origin to restore later if needed, though YOLO usually keeps 4D
-
-        # Add Padding Logic
-        pad_r = (self.window_size - W % self.window_size) % self.window_size
-        pad_b = (self.window_size - H % self.window_size) % self.window_size
-        if pad_r > 0 or pad_b > 0:
-            # Pad (B, C, H, W) -> (Pad Left, Pad Right, Pad Top, Pad Bottom)
-            x = F.pad(x, (0, pad_r, 0, pad_b))
-            _, _, H, W = x.shape  # Update H, W to padded size
-
-        # Convert to (B, L, C) for Swin processing
+        # 3. Swin Transformer 主逻辑
         x = x.permute(0, 2, 3, 1).contiguous().view(B, H * W, C)
-
-        B, L, C = x.shape
-        # assert L == H * W, "input feature has wrong size" # Assertion no longer needed or always true by design
-
         shortcut = x
         x = self.norm1(x)
         x = x.view(B, H, W, C)
@@ -2404,15 +2385,15 @@ class LBASwinTransformerblock_original(nn.Module):
             shifted_x = x
 
         # partition windows
-        x_windows = window_partition(shifted_x, self.window_size)  # nW*B, window_size, window_size, C
-        x_windows = x_windows.view(-1, self.window_size * self.window_size, C)  # nW*B, window_size*window_size, C
+        x_windows = window_partition(shifted_x, self.window_size)
+        x_windows = x_windows.view(-1, self.window_size * self.window_size, C)
 
         # W-MSA/SW-MSA
-        attn_windows = self.attn(x_windows, mask=self.attn_mask)  # nW*B, window_size*window_size, C
+        attn_windows = self.attn(x_windows, mask=attn_mask)
 
         # merge windows
         attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
-        shifted_x = window_reverse(attn_windows, self.window_size, H, W)  # B H' W' C
+        shifted_x = window_reverse(attn_windows, self.window_size, H, W)
 
         # reverse cyclic shift
         if self.shift_size > 0:
@@ -2425,33 +2406,11 @@ class LBASwinTransformerblock_original(nn.Module):
         x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
-        # Convert back to (B, C, H, W)
         x = x.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()
-
-        # Remove Padding
         if pad_r > 0 or pad_b > 0:
-            x = x[:, :, :H - pad_b, :W - pad_r]
+            x = x[:, :, :H_, :W_]
 
         return x
-
-    def extra_repr(self) -> str:
-        return f"dim={self.dim}, input_resolution={self.input_resolution}, num_heads={self.num_heads}, " \
-               f"window_size={self.window_size}, shift_size={self.shift_size}, mlp_ratio={self.mlp_ratio}"
-
-    def flops(self):
-        flops = 0
-        H, W = self.input_resolution
-        # norm1
-        flops += self.dim * H * W
-        # W-MSA/SW-MSA
-        nW = H * W / self.window_size / self.window_size
-        flops += nW * self.attn.flops(self.window_size * self.window_size)
-        # mlp
-        flops += 2 * H * W * self.dim * self.dim * self.mlp_ratio
-        # norm2
-        flops += self.dim * H * W
-        return flops
-
 
 ##### start SPD-ConvF
 

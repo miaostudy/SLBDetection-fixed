@@ -66,3 +66,13 @@ test: data/riseHand_Dataset/images
 
 ## utils/datasets.py
 经典weights_only=False
+
+## 性能问题
+LBASwinTransformerblock中有两个部分：
+1. Shifted Windows：必须需要 Mask。移位后的窗口包含了图像中原本不相邻的部分。**必须使用 Mask 来防止注意力机制混淆这些原本不相关的像素。**
+
+2. LearningBehaviorawareAttention：完全没有使用 **Mask**
+
+这导致：模型在计算注意力时，**将图像左边缘的特征和右边缘的特征进行了融合**，彻底破坏了特征的空间结构。
+
+解决：使用标准的 WindowAttention
