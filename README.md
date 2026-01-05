@@ -82,3 +82,13 @@ LBASwinTransformerblock中有两个部分：
 这导致：模型在计算注意力时，**将图像左边缘的特征和右边缘的特征进行了融合**，彻底破坏了特征的空间结构。
 
 解决：使用标准的 WindowAttention
+
+
+# 模型方面的问题
+1. LBASwinTransformerblock只是单层的Block。
+2. 传入LBASwinTransformer的是[256, [32,32], 4, 8]，即(dim, input_resolution, num_heads, window_size)，那么**shift_size**就是默认的0
+
+核心：所有Transformer的shift_size均为0，这些层只能在固定的 8x8 窗口内提取特征，窗口之间没有任何信息交流。
+
+3. input_resolution是[32,32], [16,16], [8,8]，分辨率太低了，加上窗口又是8、4、2，几乎没有感受野。
+
