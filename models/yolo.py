@@ -749,16 +749,26 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                 pass
 
         n = max(round(n * gd), 1) if n > 1 else n  # depth gain
-        if m in [nn.Conv2d, Conv, RobustConv, RobustConv2, DWConv, GhostConv, RepConv, RepConv_OREPA, DownC, 
-                 SPP, SPPF, SPPCSPC, GhostSPPCSPC, MixConv2d, Focus, Stem, GhostStem, CrossConv, 
-                 Bottleneck, BottleneckCSPA, BottleneckCSPB, BottleneckCSPC, 
-                 RepBottleneck, RepBottleneckCSPA, RepBottleneckCSPB, RepBottleneckCSPC,  
-                 Res, ResCSPA, ResCSPB, ResCSPC, 
-                 RepRes, RepResCSPA, RepResCSPB, RepResCSPC, 
-                 ResX, ResXCSPA, ResXCSPB, ResXCSPC, 
-                 RepResX, RepResXCSPA, RepResXCSPB, RepResXCSPC, 
+        # if m in [nn.Conv2d, Conv, RobustConv, RobustConv2, DWConv, GhostConv, RepConv, RepConv_OREPA, DownC,
+        #          SPP, SPPF, SPPCSPC, GhostSPPCSPC, MixConv2d, Focus, Stem, GhostStem, CrossConv,
+        #          Bottleneck, BottleneckCSPA, BottleneckCSPB, BottleneckCSPC,
+        #          RepBottleneck, RepBottleneckCSPA, RepBottleneckCSPB, RepBottleneckCSPC,
+        #          Res, ResCSPA, ResCSPB, ResCSPC,
+        #          RepRes, RepResCSPA, RepResCSPB, RepResCSPC,
+        #          ResX, ResXCSPA, ResXCSPB, ResXCSPC,
+        #          RepResX, RepResXCSPA, RepResXCSPB, RepResXCSPC,
+        #          Ghost, GhostCSPA, GhostCSPB, GhostCSPC,
+        #          SwinTransformerBlock, STCSPA, STCSPB, STCSPC,
+        #          SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC]:
+        if m in [nn.Conv2d, Conv, RobustConv, RobustConv2, DWConv, GhostConv, RepConv, RepConv_OREPA, DownC,
+                 SPP, SPPF, SPPCSPC, GhostSPPCSPC, MixConv2d, Focus, Stem, GhostStem, CrossConv,
+                 Bottleneck, BottleneckCSPA, BottleneckCSPB, BottleneckCSPC,
+                 RepBottleneck, RepBottleneckCSPA, RepBottleneckCSPB, RepBottleneckCSPC,
+                 Res, ResCSPA, ResCSPB, ResCSPC,
+                 RepRes, RepResCSPA, RepResCSPB, RepResCSPC,
+                 ResX, ResXCSPA, ResXCSPB, ResXCSPC,
+                 RepResX, RepResXCSPA, RepResXCSPB, RepResXCSPC,
                  Ghost, GhostCSPA, GhostCSPB, GhostCSPC,
-                 SwinTransformerBlock, STCSPA, STCSPB, STCSPC,
                  SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC]:
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
