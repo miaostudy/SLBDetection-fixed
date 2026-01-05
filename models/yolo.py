@@ -741,6 +741,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
     for i, (f, n, m, args) in enumerate(d['backbone'] + d['head']):  # from, number, module, args
+        print(f"Layer index: {i}, from: {f}, ch list: {ch}, len(ch): {len(ch)}")
         m = eval(m) if isinstance(m, str) else m  # eval strings
         for j, a in enumerate(args):
             try:
