@@ -50,3 +50,4 @@ test: data/riseHand_Dataset/images
 
 ## models/yolo.py
 没有引用的`SwinTransformerBlock`, 直接删掉
+LBASwinTransformerblock也需要加进去

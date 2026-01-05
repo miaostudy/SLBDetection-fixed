@@ -768,6 +768,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                  RepRes, RepResCSPA, RepResCSPB, RepResCSPC,
                  ResX, ResXCSPA, ResXCSPB, ResXCSPC,
                  RepResX, RepResXCSPA, RepResXCSPB, RepResXCSPC,
+                 LBASwinTransformerblock,
                  Ghost, GhostCSPA, GhostCSPB, GhostCSPC,
                  SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC]:
             c1, c2 = ch[f], args[0]
