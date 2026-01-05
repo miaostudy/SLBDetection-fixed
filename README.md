@@ -44,7 +44,15 @@ test: data/riseHand_Dataset/images
 有一些语法错误。少了逗号、括号啥的。
 
 最后几层的索引错误
+```yaml
+   [96, 1, Conv, [384, 3, 1]],
+   [112, 1, Conv, [768, 3, 1]],
+   [128, 1, Conv, [1152, 3, 1]],
+   [144, 1, Conv, [1536, 3, 1]],
 
+   [[145,146,147,148], 1, Detect, [nc, anchors]],
+```
+为啥连配置文件都写不对???
 
 ## models/common.py
 重复定义了`LBASwinTransformerblock`，删掉第二个，第二个接收的参数不是配置的格式。
