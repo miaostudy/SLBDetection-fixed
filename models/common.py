@@ -2336,7 +2336,7 @@ class LBASwinTransformerLayer(nn.Module):
         self.mlp_ratio = mlp_ratio
 
         self.norm1 = norm_layer(dim)
-
+        print(attn_type)
         if attn_type == 'L':
             self.attn = LearningBehaviorawareAttention(
                 dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
