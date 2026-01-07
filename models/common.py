@@ -2216,8 +2216,8 @@ class LearningBehaviorawareAttention(nn.Module):
         self.positional_encoding = nn.Parameter(torch.zeros(size=(1, window_size[0] * window_size[1], dim)))
 
         # 初始化 PReLU，设置负斜率为 -0.01
-        self.prelu = nn.PReLU(init=-0.01)
-
+        # self.prelu = nn.PReLU(init=-0.01)
+        self.prelu = nn.ReLU(inplace=True)
         print('Linear Attention window{} f{} kernel{}'.
               format(window_size, focusing_factor, kernel_size))
 
@@ -2454,8 +2454,7 @@ class LBASwinTransformerblock_original(nn.Module):
             x = x.permute(0, 2, 3, 1).contiguous().view(B, H * W, C)
             is_4d_input = True
         else:
-            B, L, C = x.shape
-            H = W = int(L ** 0.5)
+            raise ValueError("Input must be 4D (B, C, H, W) to infer correct spatial dimensions.")
 
 
         pad_r = (self.window_size - W % self.window_size) % self.window_size
