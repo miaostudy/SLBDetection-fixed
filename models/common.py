@@ -2234,8 +2234,8 @@ class LearningBehaviorawareAttention(nn.Module):
         k = k + self.positional_encoding
 
         kernel_function = self.prelu
-        q = kernel_function(q) + 1e-6
-        k = kernel_function(k) + 1e-6
+        q = kernel_function(q.clone()) + 1e-6
+        k = kernel_function(k.clone()) + 1e-6
 
         if (q < 0).any() or (k < 0).any():
             print('q负了！！！')
