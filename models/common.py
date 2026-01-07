@@ -2241,7 +2241,6 @@ class LearningBehaviorawareAttention(nn.Module):
             print('q负了！！！')
             pass
 
-        # 2. 是否有 NaN 已经出现
         if torch.isnan(q).any() or torch.isnan(k).any():
             print(f"[ERROR] NaN detected in q or k after activation!")
 
@@ -2267,30 +2266,22 @@ class LearningBehaviorawareAttention(nn.Module):
 
         i, j, c, d = q.shape[-2], k.shape[-2], k.shape[-1], v.shape[-1]
 
-        # --- [开始] 插入核心调试代码：检测分母是否异常 ---
-        # 原代码：z = 1 / (torch.einsum("b i c, b c -> b i", q, k.sum(dim=1)) + 1e-6)
-
-        # 计算分母的原始值（不加 epsilon）
         k_sum = k.sum(dim=1)
         denom_raw = torch.einsum("b i c, b c -> b i", q, k_sum)
 
-        # 检查分母是否为负或接近 0
         min_denom = denom_raw.min()
         max_denom = denom_raw.max()
 
-        # 阈值判断：如果分母加上 1e-6 后依然非常接近 0，或者为负数，则说明有问题
         final_denom = denom_raw + 1e-6
 
         if torch.isnan(final_denom).any():
             print(f"[CRASH] Denominator contains NaN!")
 
-        # 如果分母绝对值过小
         if (final_denom.abs() < 1e-5).any():
             print(f"[WARNING] Denominator near ZERO detected! Min val: {final_denom.abs().min().item()}")
             print(f"    Raw Q range: [{q.min().item()}, {q.max().item()}]")
             print(f"    Raw K range: [{k.min().item()}, {k.max().item()}]")
 
-        # 如果分母为负数
         if (final_denom < 0).any():
             print(f"[WARNING] Negative Denominator detected! Min val: {final_denom.min().item()}")
 
