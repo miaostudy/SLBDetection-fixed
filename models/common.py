@@ -2217,7 +2217,7 @@ class LearningBehaviorawareAttention(nn.Module):
 
         # 初始化 PReLU，设置负斜率为 -0.01
         # self.prelu = nn.PReLU(init=-0.01)
-        self.prelu = nn.ReLU(inplace=False)
+        self.prelu = nn.ReLU()
         print('Linear Attention window{} f{} kernel{}'.
               format(window_size, focusing_factor, kernel_size))
 
