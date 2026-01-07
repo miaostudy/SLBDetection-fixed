@@ -2323,9 +2323,6 @@ import torch.nn as nn
 from timm.models.layers import DropPath, to_2tuple
 
 
-# --------------------------------------------------------------------------------
-# 1. 这是一个基础层 (基于你提供的代码修改，作为内部组件)
-# --------------------------------------------------------------------------------
 class LBASwinTransformerLayer(nn.Module):
     def __init__(self, dim, num_heads, window_size=7, shift_size=0,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
@@ -2340,7 +2337,6 @@ class LBASwinTransformerLayer(nn.Module):
 
         self.norm1 = norm_layer(dim)
 
-        # 你的 LBA 逻辑保留
         if attn_type == 'L':
             self.attn = LearningBehaviorawareAttention(
                 dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
@@ -2357,7 +2353,6 @@ class LBASwinTransformerLayer(nn.Module):
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
     def calculate_mask(self, H, W, device):
-        # 动态计算 Mask，解决分辨率变化导致的问题
         if self.shift_size > 0:
             img_mask = torch.zeros((1, H, W, 1), device=device)
             h_slices = (slice(0, -self.window_size),
@@ -2421,12 +2416,8 @@ class LBASwinTransformerLayer(nn.Module):
         return x
 
 
-# --------------------------------------------------------------------------------
-# 2. 这是修正后的 Block (替换掉你原来的 LBASwinTransformerblock_original)
-# --------------------------------------------------------------------------------
 class LBASwinTransformerblock_original(nn.Module):
-    # 名字保持不变，方便你直接替换，但内部已经修复
-    def __init__(self, dim, num_heads, depth=2, window_size=7,  # 注意：去掉了 input_resolution
+    def __init__(self, dim, num_heads, depth=2, window_size=7,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
                  act_layer=nn.GELU, norm_layer=nn.LayerNorm,
                  focusing_factor=3, kernel_size=5, attn_type='L'):
@@ -2435,13 +2426,12 @@ class LBASwinTransformerblock_original(nn.Module):
         self.num_heads = num_heads
         self.window_size = window_size
 
-        # 自动构建 depth 层 (默认2层：一层不移位，一层移位)
         self.blocks = nn.ModuleList([
             LBASwinTransformerLayer(
                 dim=dim,
                 num_heads=num_heads,
                 window_size=window_size,
-                shift_size=0 if (i % 2 == 0) else window_size // 2,  # 自动交替 shift_size
+                shift_size=0 if (i % 2 == 0) else window_size // 2,
                 mlp_ratio=mlp_ratio,
                 qkv_bias=qkv_bias,
                 qk_scale=qk_scale,
@@ -2458,25 +2448,19 @@ class LBASwinTransformerblock_original(nn.Module):
         ])
 
     def forward(self, x):
-        # 自动适配 4D (B, C, H, W) 或 3D (B, L, C) 输入
         is_4d_input = False
         if len(x.shape) == 4:
             B, C, H, W = x.shape
             x = x.permute(0, 2, 3, 1).contiguous().view(B, H * W, C)
             is_4d_input = True
         else:
-            # 如果是 3D 输入，必须知道 H, W。
-            # 在 YOLO 中通常是 4D 进来，所以这里通常不会触发，
-            # 如果触发，假设是正方形 (不推荐)
             B, L, C = x.shape
             H = W = int(L ** 0.5)
 
-        # 处理 Padding (如果特征图尺寸不能被 window_size 整除)
-        # Swin 要求 H, W 是 window_size 的倍数
+
         pad_r = (self.window_size - W % self.window_size) % self.window_size
         pad_b = (self.window_size - H % self.window_size) % self.window_size
         if pad_r > 0 or pad_b > 0:
-            # 还原回 (B, H, W, C) 进行 pad
             x = x.view(B, H, W, C)
             x = nn.functional.pad(x, (0, 0, 0, pad_r, 0, pad_b))
             H_pad, W_pad = x.shape[1], x.shape[2]
