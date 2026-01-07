@@ -1619,36 +1619,42 @@ def window_reverse(windows, window_size, H, W):
     return x
 
 
-class SwinTransformerLayer(nn.Module):
-
-    def __init__(self, dim, num_heads, window_size=8, shift_size=0,
+class LBASwinTransformerblock(nn.Module):
+    def __init__(self, c1, c2, num_heads, window_size=7, shift_size=0,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
-                 act_layer=nn.SiLU, norm_layer=nn.LayerNorm):
+                 act_layer=nn.GELU, norm_layer=nn.LayerNorm,
+                 focusing_factor=3, kernel_size=5, attn_type='L'):
         super().__init__()
-        self.dim = dim
+        self.dim = c1  # In YOLO, c1 is usually the input dimension
         self.num_heads = num_heads
         self.window_size = window_size
         self.shift_size = shift_size
         self.mlp_ratio = mlp_ratio
-        # if min(self.input_resolution) <= self.window_size:
-        #     # if window size is larger than input resolution, we don't partition windows
-        #     self.shift_size = 0
-        #     self.window_size = min(self.input_resolution)
-        assert 0 <= self.shift_size < self.window_size, "shift_size must in 0-window_size"
 
-        self.norm1 = norm_layer(dim)
-        self.attn = WindowAttention(
-            dim, window_size=(self.window_size, self.window_size), num_heads=num_heads,
-            qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
+        # Removed self.input_resolution check and fixed mask generation
+
+        self.norm1 = norm_layer(self.dim)
+
+        # Initialize Attention
+        assert attn_type in ['L', 'S']
+        if attn_type == 'L':
+            self.attn = FocusedLinearAttention(
+                self.dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
+                qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop,
+                focusing_factor=focusing_factor, kernel_size=kernel_size)
+        else:
+            self.attn = WindowAttention(
+                self.dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
+                qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
 
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        self.norm2 = norm_layer(dim)
-        mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
+        self.norm2 = norm_layer(self.dim)
+        mlp_hidden_dim = int(self.dim * mlp_ratio)
+        self.mlp = Mlp(in_features=self.dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
     def create_mask(self, H, W):
-        # calculate attention mask for SW-MSA
-        img_mask = torch.zeros((1, H, W, 1))  # 1 H W 1
+        # Dynamically calculate mask based on current H, W
+        img_mask = torch.zeros((1, H, W, 1), device=self.norm1.weight.device)  # 1 H W 1
         h_slices = (slice(0, -self.window_size),
                     slice(-self.window_size, -self.shift_size),
                     slice(-self.shift_size, None))
@@ -1665,68 +1671,71 @@ class SwinTransformerLayer(nn.Module):
         mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
         attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
         attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
-
         return attn_mask
 
     def forward(self, x):
-        # reshape x[b c h w] to x[b l c]
-        _, _, H_, W_ = x.shape
+        # YOLO inputs are typically (B, C, H, W) for Conv layers,
+        # but Swin often expects flattened or (B, H, W, C).
+        # Assuming x comes in as (B, L, C) from previous Swin block or (B, C, H, W) from Conv.
 
-        Padding = False
-        if min(H_, W_) < self.window_size or H_ % self.window_size != 0 or W_ % self.window_size != 0:
-            Padding = True
-            # print(f'img_size {min(H_, W_)} is less than (or not divided by) window_size {self.window_size}, Padding.')
-            pad_r = (self.window_size - W_ % self.window_size) % self.window_size
-            pad_b = (self.window_size - H_ % self.window_size) % self.window_size
-            x = F.pad(x, (0, pad_r, 0, pad_b))
-
-        # print('2', x.shape)
+        # Check input shape and handle reshape if necessary
         B, C, H, W = x.shape
         L = H * W
-        x = x.permute(0, 2, 3, 1).contiguous().view(B, L, C)  # b, L, c
 
-        # create mask from init to forward
-        if self.shift_size > 0:
-            attn_mask = self.create_mask(H, W).to(x.device)
-        else:
-            attn_mask = None
+        # Flatten for Swin processing: (B, C, H, W) -> (B, L, C)
+        x = x.permute(0, 2, 3, 1).contiguous().view(B, L, C)
 
         shortcut = x
         x = self.norm1(x)
         x = x.view(B, H, W, C)
 
+        # Pad if resolution is not multiple of window size
+        pad_l = pad_t = 0
+        pad_r = (self.window_size - W % self.window_size) % self.window_size
+        pad_b = (self.window_size - H % self.window_size) % self.window_size
+        x = F.pad(x, (0, 0, pad_l, pad_r, pad_t, pad_b))
+        _, Hp, Wp, _ = x.shape
+
         # cyclic shift
         if self.shift_size > 0:
+            attn_mask = self.create_mask(Hp, Wp)  # Generate mask dynamically
             shifted_x = torch.roll(x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
         else:
             shifted_x = x
+            attn_mask = None
 
         # partition windows
         x_windows = window_partition(shifted_x, self.window_size)  # nW*B, window_size, window_size, C
         x_windows = x_windows.view(-1, self.window_size * self.window_size, C)  # nW*B, window_size*window_size, C
 
         # W-MSA/SW-MSA
-        attn_windows = self.attn(x_windows, mask=attn_mask)  # nW*B, window_size*window_size, C
+        # Pass mask only if it exists
+        if attn_mask is not None:
+            attn_windows = self.attn(x_windows, mask=attn_mask)
+        else:
+            attn_windows = self.attn(x_windows)
 
         # merge windows
         attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
-        shifted_x = window_reverse(attn_windows, self.window_size, H, W)  # B H' W' C
+        shifted_x = window_reverse(attn_windows, self.window_size, Hp, Wp)  # B H' W' C
 
         # reverse cyclic shift
         if self.shift_size > 0:
             x = torch.roll(shifted_x, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
         else:
             x = shifted_x
+
+        if pad_r > 0 or pad_b > 0:
+            x = x[:, :H, :W, :].contiguous()
+
         x = x.view(B, H * W, C)
 
         # FFN
         x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
-        x = x.permute(0, 2, 1).contiguous().view(-1, C, H, W)  # b c h w
-
-        if Padding:
-            x = x[:, :, :H_, :W_]  # reverse padding
+        # Reshape back to (B, C, H, W) for next YOLO layers
+        x = x.permute(0, 2, 1).contiguous().view(B, C, H, W)
 
         return x
 
