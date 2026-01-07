@@ -2217,7 +2217,7 @@ class LearningBehaviorawareAttention(nn.Module):
 
         # 初始化 PReLU，设置负斜率为 -0.01
         # self.prelu = nn.PReLU(init=-0.01)
-        self.prelu = nn.ReLU(inplace=True)
+        self.prelu = nn.ReLU(inplace=False)
         print('Linear Attention window{} f{} kernel{}'.
               format(window_size, focusing_factor, kernel_size))
 
@@ -2335,24 +2335,31 @@ class LBASwinTransformerLayer(nn.Module):
         self.shift_size = shift_size
         self.mlp_ratio = mlp_ratio
 
+        # 1-归一化
         self.norm1 = norm_layer(dim)
         print(attn_type)
         if attn_type == 'L':
+            # 改进的注意力，原代码这里是FocusedLinearAttention，没看到具体实现
             self.attn = LearningBehaviorawareAttention(
                 dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
                 qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop,
                 focusing_factor=focusing_factor, kernel_size=kernel_size)
         else:
+            # 使用标准的窗口注意力
             self.attn = WindowAttention(
                 dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
                 qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
 
+        # DropPath (随机深度/随机丢弃路径)，用于正则化
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        # 第二层归一化
         self.norm2 = norm_layer(dim)
-        mlp_hidden_dim = int(dim * mlp_ratio)
+        mlp_hidden_dim = int(dim * mlp_ratio) # 隐藏层维度
+        # mlp
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
     def calculate_mask(self, H, W, device):
+        # 移动了特征图
         if self.shift_size > 0:
             img_mask = torch.zeros((1, H, W, 1), device=device)
             h_slices = (slice(0, -self.window_size),
