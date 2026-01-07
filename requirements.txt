@@ -39,3 +39,4 @@ thop  # FLOPs computation
 # roboflow
 
 einops
+timm
